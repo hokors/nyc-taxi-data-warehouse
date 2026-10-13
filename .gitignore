@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+data/
+yellow_taxi_2025.csv
+*.pyc
