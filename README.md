@@ -43,7 +43,7 @@ The fact table uses the following dimension relationships:
 
 `yellow_taxi_2025.csv` is several gigabytes and is too large for GitHub. Download it from our shared Google Drive:
 
-[GOOGLE DRIVE LINK HERE]
+[Download `yellow_taxi_2025.csv` from Google Drive](https://drive.google.com/file/d/1b2ZlgPIotLcenI2VgYvcgPkpymQKVw4B/view?usp=sharing)
 
 After cloning this repository, place the downloaded file in the repository root. The result should look like this:
 
