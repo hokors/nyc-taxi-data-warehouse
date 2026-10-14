@@ -13,6 +13,32 @@ This repository contains the raw source-database setup and supporting files for 
 - `taxi_zone_lookup.csv` - taxi-zone reference data
 - `data_dictionary_trip_records_yellow.pdf` - Yellow Taxi data dictionary
 
+## Warehouse Schema
+
+The warehouse schema is implemented in `database/warehouse_schema.sql` and uses the `nyc_taxi_warehouse` database. It follows a star schema with this grain: one row in `fact_taxi_rides` represents one taxi ride.
+
+The central fact table is `fact_taxi_rides`. Its dimensions are:
+
+- `dim_datetime`
+- `dim_location`
+- `dim_payment_type`
+- `dim_vendor`
+- `dim_ratecode`
+
+The fact table uses the following dimension relationships:
+
+- `pickup_datetime_id` and `dropoff_datetime_id` reference `dim_datetime`.
+- `pickup_location_id` and `dropoff_location_id` reference `dim_location`.
+- `payment_type_id`, `vendor_id`, and `ratecode_id` reference their corresponding dimensions.
+
+## Current Project Status
+
+- Source database setup: completed
+- Source dataset import: completed
+- Star schema design: completed
+- Warehouse tables and PK/FK relationships: completed
+- Next step: ETL to populate the dimensions and `fact_taxi_rides`
+
 ## Dataset Setup
 
 `yellow_taxi_2025.csv` is several gigabytes and is too large for GitHub. Download it from our shared Google Drive:
