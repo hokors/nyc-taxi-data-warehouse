@@ -37,7 +37,10 @@ The fact table uses the following dimension relationships:
 - Source dataset import: completed
 - Star schema design: completed
 - Warehouse tables and PK/FK relationships: completed
-- Next step: ETL to populate the dimensions and `fact_taxi_rides`
+- Static dimension seeders & fallback records: completed
+- High-performance streaming ETL pipeline: completed
+- Automated reconciliation & data quality test suite: completed
+- Next step: OLAP query processing, indexing, and dashboard implementation (Members 3 & 4)
 
 ## Dataset Setup
 
@@ -167,3 +170,92 @@ Use small result sets so MySQL does not try to display the full tables:
 SELECT * FROM yellow_taxi_trips LIMIT 5;
 SELECT * FROM taxi_zone_lookup LIMIT 5;
 ```
+
+---
+
+## ETL Pipeline & Warehouse Loading (Member 2)
+
+The ETL pipeline streams, wrangles, cleans, and loads the multi-gigabyte NYC Yellow Taxi dataset into `nyc_taxi_warehouse` using bounded memory chunks, transactional micro-batches, and deterministic surrogate key derivation.
+
+For comprehensive documentation, see:
+- [Data Cleaning Rules & Specification](docs/data_cleaning_rules.md)
+- [ETL Architecture & Performance Runbook](docs/etl_architecture.md)
+
+### 1. Python Environment Setup
+
+Install required pipeline dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Configure Environment Settings
+
+Create your local `.env` configuration from the provided template:
+
+```bash
+cp .env.example .env
+```
+
+Ensure your `.env` contains your MySQL credentials and desired extraction mode:
+
+```ini
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_password
+SOURCE_DB=nyc_taxi_source
+WAREHOUSE_DB=nyc_taxi_warehouse
+CHUNK_SIZE=100000
+EXTRACT_MODE=db
+```
+
+### 3. Initialize Warehouse Schema & Dimension Seeders
+
+Run the warehouse DDL and seed the reference dimensions:
+
+```sql
+-- 1. Create warehouse schema
+SOURCE database/warehouse_schema.sql;
+
+-- 2. Seed static TLC dimensions & fallback unknown records (-1)
+SOURCE database/seed_dimensions.sql;
+```
+
+### 4. Execute the ETL Pipeline
+
+Run the CLI pipeline runner from the repository root:
+
+```bash
+# Standard execution (streams from MySQL source table)
+python -m etl.run_pipeline
+
+# Fresh reload (truncates fact_taxi_rides before running)
+python -m etl.run_pipeline --truncate-facts
+
+# Fast test run (process only the first 3 chunks = 300,000 rows)
+python -m etl.run_pipeline --limit-chunks 3
+
+# Stream directly from flat CSV (yellow_taxi_2025.csv)
+python -m etl.run_pipeline --mode csv
+```
+
+### 5. Run Automated Reconciliation & Quality Audits
+
+Run the automated validation suite to certify warehouse data integrity:
+
+```bash
+# Standalone CLI validation audit
+python -m tests.test_reconciliation
+
+# Or via pytest
+pytest tests/ -v
+```
+
+The test suite automatically audits:
+1. **Row Count Reconciliation**: Compares source row count against warehouse facts and accounts for rejected anomaly counts.
+2. **Referential Integrity**: Verifies zero orphaned foreign keys across all 5 dimensions.
+3. **Data Quality Constraints**: Confirms zero negative fares, negative trip distances, negative totals, or unparsed timestamps.
+4. **Aggregate Parity**: Reconciles financial metrics (`SUM(fare_amount)`, `SUM(tip_amount)`, `SUM(total_amount)`, `AVG(trip_distance)`) between source and warehouse.
+5. **Schema & Column Compliance**: Audits `INFORMATION_SCHEMA.COLUMNS` to verify that all warehouse tables and columns exist with expected definitions.
+
