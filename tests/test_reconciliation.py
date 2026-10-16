@@ -281,6 +281,59 @@ def check_aggregate_parity() -> bool:
     return True
 
 
+def check_schema_compliance() -> bool:
+    """
+    Audits INFORMATION_SCHEMA.COLUMNS to verify that all warehouse tables
+    and mandatory columns exist with correct names and definitions.
+    """
+    print(f"\n{Colors.BOLD}--- 5. SCHEMA & COLUMN INTEGRITY AUDIT ---{Colors.RESET}")
+    expected_tables = {
+        "fact_taxi_rides": [
+            "ride_id", "pickup_datetime_id", "dropoff_datetime_id",
+            "pickup_location_id", "dropoff_location_id", "payment_type_id",
+            "vendor_id", "ratecode_id", "passenger_count", "trip_distance",
+            "store_and_fwd_flag", "fare_amount", "extra", "mta_tax",
+            "tip_amount", "tolls_amount", "improvement_surcharge",
+            "congestion_surcharge", "cbd_congestion_fee", "airport_fee", "total_amount"
+        ],
+        "dim_datetime": [
+            "datetime_id", "year", "quarter", "month", "day",
+            "hour", "minute", "second", "is_weekend", "time_of_day"
+        ],
+        "dim_location": ["location_id", "borough", "zone", "service_zone"],
+        "dim_vendor": ["vendor_id", "vendor_name"],
+        "dim_ratecode": ["ratecode_id", "ratecode_name"],
+        "dim_payment_type": ["payment_type_id", "payment_type_name"],
+    }
+
+    all_passed = True
+    query = """
+        SELECT TABLE_NAME, COLUMN_NAME 
+        FROM INFORMATION_SCHEMA.COLUMNS 
+        WHERE TABLE_SCHEMA = :schema_name;
+    """
+    with warehouse_engine.connect() as conn:
+        rows = conn.execute(text(query), {"schema_name": config.WAREHOUSE_DB}).fetchall()
+
+    actual_schema = {}
+    for table_name, column_name in rows:
+        actual_schema.setdefault(table_name, set()).add(column_name)
+
+    for tbl, cols in expected_tables.items():
+        if tbl not in actual_schema:
+            print_check(f"Table Exists: {tbl}", False, "Table MISSING from warehouse")
+            all_passed = False
+            continue
+
+        missing_cols = set(cols) - actual_schema[tbl]
+        passed = len(missing_cols) == 0
+        if not passed:
+            all_passed = False
+        print_check(f"Columns for {tbl}", passed, f"Missing: {list(missing_cols) if missing_cols else 'None'}")
+
+    return all_passed
+
+
 def run_all_checks() -> bool:
     print("\n" + "=" * 78)
     print("       STADVDB MCO1 — AUTOMATED RECONCILIATION & VALIDATION AUDIT")
@@ -290,9 +343,16 @@ def run_all_checks() -> bool:
     fk_passed = check_referential_integrity()
     constraints_passed = check_business_constraints()
     aggregates_passed = check_aggregate_parity()
+    schema_passed = check_schema_compliance()
 
     print("\n" + "=" * 78)
-    overall_passed = (row_counts["fact_count"] > 0) and fk_passed and constraints_passed and aggregates_passed
+    overall_passed = (
+        (row_counts["fact_count"] > 0)
+        and fk_passed
+        and constraints_passed
+        and aggregates_passed
+        and schema_passed
+    )
     if overall_passed:
         print(f" {Colors.GREEN}{Colors.BOLD}OVERALL AUDIT STATUS: PASSED — WAREHOUSE IS INTEGRITY-CERTIFIED{Colors.RESET}")
     else:
@@ -303,6 +363,10 @@ def run_all_checks() -> bool:
 
 
 # Pytest test cases
+def test_schema_compliance():
+    assert check_schema_compliance(), "Schema compliance check failed: missing tables or columns."
+
+
 def test_row_counts():
     counts = check_row_counts()
     assert counts["fact_count"] > 0, "Warehouse fact table contains zero records."
@@ -319,3 +383,4 @@ def test_business_constraints():
 if __name__ == "__main__":
     success = run_all_checks()
     sys.exit(0 if success else 1)
+
