@@ -102,6 +102,18 @@ def seed_inline_dimensions() -> None:
                     """
                 )
             )
+            # Datetime Fallback
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO dim_datetime (
+                        datetime_id, year, quarter, month, day, hour, minute, second, is_weekend, time_of_day
+                    ) VALUES (
+                        -1, 2025, 1, 1, 1, 0, 0, 0, FALSE, 'Unknown'
+                    ) ON DUPLICATE KEY UPDATE time_of_day = VALUES(time_of_day);
+                    """
+                )
+            )
 
 
 def load_dim_location_from_csv(csv_path: Optional[Path] = None) -> int:

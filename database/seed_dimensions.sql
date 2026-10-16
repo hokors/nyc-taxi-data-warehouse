@@ -47,3 +47,11 @@ INSERT IGNORE INTO dim_location (location_id, borough, zone, service_zone)
 SELECT LocationID, Borough, Zone, service_zone 
 FROM nyc_taxi_source.taxi_zone_lookup
 WHERE LocationID IS NOT NULL;
+
+-- 6. Seed dim_datetime fallback unknown record (-1)
+INSERT INTO dim_datetime (
+    datetime_id, year, quarter, month, day, hour, minute, second, is_weekend, time_of_day
+) VALUES (
+    -1, 2025, 1, 1, 1, 0, 0, 0, FALSE, 'Unknown'
+) ON DUPLICATE KEY UPDATE time_of_day = VALUES(time_of_day);
+
