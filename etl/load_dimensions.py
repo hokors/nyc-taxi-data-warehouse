@@ -170,10 +170,13 @@ def load_dim_location_from_csv(csv_path: Optional[Path] = None) -> int:
         conn.close()
 
 
-def load_dim_datetime_batch(cursor, dim_datetime_df: pd.DataFrame) -> int:
+def load_dim_datetime_batch(
+    cursor, dim_datetime_df: pd.DataFrame, sub_batch_size: int = 25000
+) -> int:
     """
     Bulk-inserts unique decomposed datetime records into dim_datetime for the current chunk.
     Uses INSERT IGNORE so already-inserted timestamps are safely skipped.
+    Executes in sub-batches (default 25,000 rows) to stay safely within max_allowed_packet.
     """
     if dim_datetime_df.empty:
         return 0
@@ -210,5 +213,13 @@ def load_dim_datetime_batch(cursor, dim_datetime_df: pd.DataFrame) -> int:
         for r in dim_datetime_df.itertuples(index=False)
     ]
 
-    cursor.executemany(insert_sql, records)
-    return len(records)
+    total_records = len(records)
+    total_inserted = 0
+
+    for start_idx in range(0, total_records, sub_batch_size):
+        end_idx = min(start_idx + sub_batch_size, total_records)
+        cursor.executemany(insert_sql, records[start_idx:end_idx])
+        total_inserted += (end_idx - start_idx)
+
+    return total_inserted
+
