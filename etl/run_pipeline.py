@@ -19,7 +19,7 @@ from etl.load_dimensions import (
     seed_static_dimensions,
 )
 from etl.load_facts import load_facts_batch, truncate_warehouse_facts
-from etl.transform import transform_chunk
+from etl.transform import get_valid_dimension_lookups, transform_chunk
 
 # Configure logging
 logging.basicConfig(
@@ -107,7 +107,11 @@ def run_pipeline():
     if args.truncate_facts:
         truncate_warehouse_facts()
 
-    # Step 4: Stream and Process Chunks
+    # Step 4: Cache Dimension Lookups for Dynamic Key Resolution
+    logger.info("Caching dimension primary keys for in-memory lookup resolution...")
+    dimension_lookups = get_valid_dimension_lookups()
+
+    # Step 5: Stream and Process Chunks
     logger.info(f"Step 2/3: Starting chunked extraction and micro-batch loading (mode={args.mode})...")
     total_available_rows = get_source_row_count(args.mode)
     if total_available_rows > 0:
@@ -154,8 +158,10 @@ def run_pipeline():
                 chunk_raw_len = len(chunk_df)
                 total_extracted += chunk_raw_len
 
-                # Transform, clean, and generate surrogate keys
-                fact_df, dim_datetime_df, metrics = transform_chunk(chunk_df)
+                # Transform, clean, and generate surrogate keys with dynamic lookup resolution
+                fact_df, dim_datetime_df, metrics = transform_chunk(
+                    chunk_df, dimension_lookups=dimension_lookups
+                )
 
                 # Accumulate rejection metrics
                 dropped_null_dt += metrics.dropped_null_datetime

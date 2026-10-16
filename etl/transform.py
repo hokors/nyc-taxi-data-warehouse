@@ -6,7 +6,7 @@ and extracts datetime dimension attributes.
 
 import logging
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, Optional
 import numpy as np
 import pandas as pd
 
@@ -21,6 +21,33 @@ VALID_RATECODES = {1, 2, 3, 4, 5, 6, 99}
 VALID_PAYMENTS = {1, 2, 3, 4, 5, 6}
 VALID_LOCATION_MIN = 1
 VALID_LOCATION_MAX = 265
+
+
+def get_valid_dimension_lookups() -> dict:
+    """
+    Loads active valid dimension primary keys from warehouse to enable dynamic lookups.
+    """
+    from etl.db import warehouse_engine
+    from sqlalchemy import text
+
+    lookups = {
+        "locations": set(),
+        "vendors": {1, 2},
+        "ratecodes": {1, 2, 3, 4, 5, 6, 99},
+        "payments": {1, 2, 3, 4, 5, 6},
+    }
+    try:
+        with warehouse_engine.connect() as conn:
+            loc_ids = conn.execute(text("SELECT location_id FROM dim_location")).scalars().all()
+            if loc_ids:
+                lookups["locations"] = set(loc_ids)
+    except Exception as e:
+        logger.warning(f"Could not load dynamic location lookup from DB: {e}. Falling back to default range.")
+
+    if not lookups["locations"]:
+        lookups["locations"] = set(range(1, 266))
+
+    return lookups
 
 
 @dataclass
@@ -96,7 +123,9 @@ def decompose_datetime(timestamps: pd.Series) -> pd.DataFrame:
     return df_dt.drop(columns=["ts"])
 
 
-def transform_chunk(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, TransformMetrics]:
+def transform_chunk(
+    df: pd.DataFrame, dimension_lookups: Optional[dict] = None
+) -> Tuple[pd.DataFrame, pd.DataFrame, TransformMetrics]:
     """
     Applies data wrangling, cleansing filters, and surrogate key mapping to a raw chunk.
     
@@ -204,13 +233,19 @@ def transform_chunk(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, Trans
         df["store_and_fwd_flag"].isin(["Y", "N"]), "N"
     )
 
+    # Resolve dynamic or static dimension lookup sets
+    valid_vendors = dimension_lookups.get("vendors", VALID_VENDORS) if dimension_lookups else VALID_VENDORS
+    valid_ratecodes = dimension_lookups.get("ratecodes", VALID_RATECODES) if dimension_lookups else VALID_RATECODES
+    valid_payments = dimension_lookups.get("payments", VALID_PAYMENTS) if dimension_lookups else VALID_PAYMENTS
+    valid_locations = dimension_lookups.get("locations", set(range(1, 266))) if dimension_lookups else set(range(1, 266))
+
     # VendorID: Map invalid/missing to -1
     df["vendor_id"] = (
         pd.to_numeric(df["VendorID"], errors="coerce")
         .fillna(-1)
         .astype("int32")
     )
-    df["vendor_id"] = df["vendor_id"].where(df["vendor_id"].isin(VALID_VENDORS), -1)
+    df["vendor_id"] = df["vendor_id"].where(df["vendor_id"].isin(valid_vendors), -1)
 
     # RatecodeID: Map invalid/missing to -1
     df["ratecode_id"] = (
@@ -218,7 +253,7 @@ def transform_chunk(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, Trans
         .fillna(-1)
         .astype("int32")
     )
-    df["ratecode_id"] = df["ratecode_id"].where(df["ratecode_id"].isin(VALID_RATECODES), -1)
+    df["ratecode_id"] = df["ratecode_id"].where(df["ratecode_id"].isin(valid_ratecodes), -1)
 
     # payment_type: Map invalid/missing to -1
     df["payment_type_id"] = (
@@ -227,18 +262,17 @@ def transform_chunk(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, Trans
         .astype("int32")
     )
     df["payment_type_id"] = df["payment_type_id"].where(
-        df["payment_type_id"].isin(VALID_PAYMENTS), -1
+        df["payment_type_id"].isin(valid_payments), -1
     )
 
-    # PULocationID and DOLocationID: Map null or out-of-range (< 1 or > 265) to -1
+    # PULocationID and DOLocationID: Dynamic lookup against valid locations (fallback: -1)
     df["pickup_location_id"] = (
         pd.to_numeric(df["PULocationID"], errors="coerce")
         .fillna(-1)
         .astype("int32")
     )
     df["pickup_location_id"] = df["pickup_location_id"].where(
-        (df["pickup_location_id"] >= VALID_LOCATION_MIN)
-        & (df["pickup_location_id"] <= VALID_LOCATION_MAX),
+        df["pickup_location_id"].isin(valid_locations),
         -1,
     )
 
@@ -248,10 +282,31 @@ def transform_chunk(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, Trans
         .astype("int32")
     )
     df["dropoff_location_id"] = df["dropoff_location_id"].where(
-        (df["dropoff_location_id"] >= VALID_LOCATION_MIN)
-        & (df["dropoff_location_id"] <= VALID_LOCATION_MAX),
+        df["dropoff_location_id"].isin(valid_locations),
         -1,
     )
+
+    # Handle case-sensitivity alias for Airport_fee
+    if "Airport_fee" in df.columns and "airport_fee" not in df.columns:
+        df["airport_fee"] = df["Airport_fee"]
+    elif "airport_fee" not in df.columns:
+        df["airport_fee"] = 0.0
+
+    # Component fee aggregation and reconciliation
+    # Total revenue must reflect fare plus all regulatory surcharges and tips
+    calculated_total = (
+        df["fare_amount"]
+        + df["extra"]
+        + df["mta_tax"]
+        + df["tip_amount"]
+        + df["tolls_amount"]
+        + df["improvement_surcharge"]
+        + df["congestion_surcharge"]
+        + df["airport_fee"]
+        + df["cbd_congestion_fee"]
+    )
+    # If raw total_amount is zero or null but components exist, impute with calculated sum
+    df["total_amount"] = df["total_amount"].where(df["total_amount"] > 0, calculated_total)
 
     # 7. Surrogate Key Mapping for Datetimes
     df["pickup_datetime_id"] = timestamp_to_surrogate_key(df["tpep_pickup_datetime"])
@@ -285,11 +340,8 @@ def transform_chunk(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, Trans
         "total_amount",
     ]
 
-    # Handle case-sensitivity alias for Airport_fee
-    if "Airport_fee" in df.columns and "airport_fee" not in df.columns:
-        df["airport_fee"] = df["Airport_fee"]
-
     fact_df = df[fact_cols].copy()
     metrics.total_cleaned = len(fact_df)
 
     return fact_df, dim_datetime_df, metrics
+
