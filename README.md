@@ -171,8 +171,6 @@ SELECT * FROM yellow_taxi_trips LIMIT 5;
 SELECT * FROM taxi_zone_lookup LIMIT 5;
 ```
 
----
-
 ## ETL Pipeline & Warehouse Loading (Member 2)
 
 The ETL pipeline streams, wrangles, cleans, and loads the multi-gigabyte NYC Yellow Taxi dataset into `nyc_taxi_warehouse` using bounded memory chunks, transactional micro-batches, and deterministic surrogate key derivation.
@@ -259,3 +257,79 @@ The test suite automatically audits:
 4. **Aggregate Parity**: Reconciles financial metrics (`SUM(fare_amount)`, `SUM(tip_amount)`, `SUM(total_amount)`, `AVG(trip_distance)`) between source and warehouse.
 5. **Schema & Column Compliance**: Audits `INFORMATION_SCHEMA.COLUMNS` to verify that all warehouse tables and columns exist with expected definitions.
 
+## NYC Taxi Data Warehouse & Analytics Dashboard
+
+A dashboard for exploring NYC taxi trip data using OLAP operations (slice, dice, drill-down, and roll-up) and query performance benchmarks. Built with FastAPI, Next.js, Tailwind CSS, and MySQL.
+
+### Prerequisites
+
+Install the following before starting:
+
+- Python 3.10+
+- Node.js 20+
+- MySQL 8.0+
+- npm
+
+### 1. Configure Environment Variables
+
+#### Backend
+
+Create `backend/.env`:
+
+```env
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=your_mysql_username
+DB_PASSWORD=your_mysql_password
+DB_NAME=your_database_name
+```
+
+Replace the placeholder values with your MySQL credentials and database name.
+
+#### Frontend
+
+Create `frontend/.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+### 2. Set Up the Backend
+
+From the project root, run:
+
+**Windows (PowerShell):**
+
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+The backend runs at `http://localhost:8000`.
+
+### 3. Set Up the Frontend
+
+Open a **separate terminal** from the project root:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The dashboard runs at `http://localhost:3000`.
+
+### 4. Verify the Setup
+
+Ensure MySQL is running and the configured database exists.
+
+- **Dashboard:** http://localhost:3000
+- **Backend health check:** http://localhost:8000/api/health — should return `{"status":"ok"}`
+- **Database connection:** http://localhost:8000/api/health-db — should report a successful connection
+- **API documentation:** http://localhost:8000/docs
+
+Both the backend and frontend development servers must remain running while using the dashboard.
+---
