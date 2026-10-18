@@ -37,7 +37,7 @@ CREATE TABLE dim_datetime (
 );
 
 CREATE TABLE fact_taxi_rides (
-    ride_id INT AUTO_INCREMENT PRIMARY KEY,
+    ride_id BIGINT AUTO_INCREMENT PRIMARY KEY,
     pickup_datetime_id INT,
     dropoff_datetime_id INT,
     pickup_location_id INT,
