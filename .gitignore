@@ -4,3 +4,4 @@ data/
 yellow_taxi_2025.csv
 *.pyc
 .env
+.vscode/
