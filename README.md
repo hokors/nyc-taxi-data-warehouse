@@ -272,7 +272,7 @@ Install the following before starting:
 
 ### 1. Configure Environment Variables
 
-#### Backend
+### Backend
 
 Create `backend/.env`:
 
@@ -281,12 +281,12 @@ DB_HOST=localhost
 DB_PORT=3306
 DB_USER=your_mysql_username
 DB_PASSWORD=your_mysql_password
-DB_NAME=your_database_name
+DB_NAME=nyc_taxi_warehouse
 ```
 
 Replace the placeholder values with your MySQL credentials and database name.
 
-#### Frontend
+### Frontend
 
 Create `frontend/.env.local`:
 
@@ -331,5 +331,7 @@ Ensure MySQL is running and the configured database exists.
 - **Database connection:** http://localhost:8000/api/health-db — should report a successful connection
 - **API documentation:** http://localhost:8000/docs
 
-Both the backend and frontend development servers must remain running while using the dashboard.
 ---
+
+Both the backend and frontend development servers must remain running while using the dashboard.
+
