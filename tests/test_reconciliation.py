@@ -201,8 +201,8 @@ def check_business_constraints() -> bool:
             "SELECT COUNT(*) FROM fact_taxi_rides WHERE passenger_count < 0;",
         ),
         (
-            "No Unparsed Datetimes (pickup_datetime_id != -1)",
-            "SELECT COUNT(*) FROM fact_taxi_rides WHERE pickup_datetime_id = -1;",
+            "No Unparsed Datetimes (pickup_datetime_id > 0)",
+            "SELECT COUNT(*) FROM fact_taxi_rides WHERE pickup_datetime_id IS NULL OR pickup_datetime_id <= 0;",
         ),
         (
             "Distance Anomaly Check (trip_distance <= 500)",
@@ -292,13 +292,12 @@ def check_schema_compliance() -> bool:
             "ride_id", "pickup_datetime_id", "dropoff_datetime_id",
             "pickup_location_id", "dropoff_location_id", "payment_type_id",
             "vendor_id", "ratecode_id", "passenger_count", "trip_distance",
-            "store_and_fwd_flag", "fare_amount", "extra", "mta_tax",
-            "tip_amount", "tolls_amount", "improvement_surcharge",
-            "congestion_surcharge", "cbd_congestion_fee", "airport_fee", "total_amount"
+            "fare_amount", "tip_amount", "tolls_amount", "total_amount",
+            "airport_fee", "cbd_congestion_fee"
         ],
         "dim_datetime": [
-            "datetime_id", "year", "quarter", "month", "day",
-            "hour", "minute", "second", "is_weekend", "time_of_day"
+            "datetime_id", "full_datetime", "year", "month", "day",
+            "hour", "time_of_day"
         ],
         "dim_location": ["location_id", "borough", "zone", "service_zone"],
         "dim_vendor": ["vendor_id", "vendor_name"],

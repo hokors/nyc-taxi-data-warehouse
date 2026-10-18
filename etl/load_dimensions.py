@@ -107,9 +107,9 @@ def seed_inline_dimensions() -> None:
                 text(
                     """
                     INSERT INTO dim_datetime (
-                        datetime_id, year, quarter, month, day, hour, minute, second, is_weekend, time_of_day
+                        datetime_id, full_datetime, year, month, day, hour, time_of_day
                     ) VALUES (
-                        -1, 2025, 1, 1, 1, 0, 0, 0, FALSE, 'Unknown'
+                        0, '1970-01-01 00:00:00', 0, 0, 0, 0, 'Unknown'
                     ) ON DUPLICATE KEY UPDATE time_of_day = VALUES(time_of_day);
                     """
                 )
@@ -182,32 +182,26 @@ def load_dim_datetime_batch(
         return 0
 
     insert_sql = """
-        INSERT IGNORE INTO dim_datetime (
+        INSERT INTO dim_datetime (
             datetime_id,
+            full_datetime,
             year,
-            quarter,
             month,
             day,
             hour,
-            minute,
-            second,
-            is_weekend,
             time_of_day
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE time_of_day = VALUES(time_of_day);
     """
 
-    # Format values for fast batch execution
     records = [
         (
             int(r.datetime_id),
+            r.full_datetime,
             int(r.year),
-            int(r.quarter),
             int(r.month),
             int(r.day),
             int(r.hour),
-            int(r.minute),
-            int(r.second),
-            bool(r.is_weekend),
             str(r.time_of_day),
         )
         for r in dim_datetime_df.itertuples(index=False)

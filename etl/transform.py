@@ -63,17 +63,17 @@ class TransformMetrics:
 
 def timestamp_to_surrogate_key(series: pd.Series) -> pd.Series:
     """
-    Computes a deterministic integer surrogate key from a datetime series.
-    Formula: Seconds elapsed since 2025-01-01 00:00:00 + 1.
+    Computes a deterministic integer hourly surrogate key: YYYYMMDDHH.
     Guarantees unique surrogate keys fitting within 32-bit signed INT (< 2.14B).
-    Missing / NaT values are mapped to -1.
+    Missing / NaT values are mapped to 0.
     """
-    # Second offset from base
-    offsets = (series - BASE_DATETIME).dt.total_seconds()
-    # Map valid to int offset + 1, invalid / NaT to -1
-    keys = offsets.fillna(-2).astype("int64") + 1
-    keys = keys.where(series.notna(), -1)
-    return keys.astype("int32")
+    keys = (
+        series.dt.year * 1000000
+        + series.dt.month * 10000
+        + series.dt.day * 100
+        + series.dt.hour
+    )
+    return keys.fillna(0).astype("int64")
 
 
 def assign_time_of_day(hours: pd.Series) -> pd.Series:
@@ -96,31 +96,25 @@ def decompose_datetime(timestamps: pd.Series) -> pd.DataFrame:
         return pd.DataFrame(
             columns=[
                 "datetime_id",
+                "full_datetime",
                 "year",
-                "quarter",
                 "month",
                 "day",
                 "hour",
-                "minute",
-                "second",
-                "is_weekend",
                 "time_of_day",
             ]
         )
 
     df_dt = pd.DataFrame({"ts": valid_ts})
     df_dt["datetime_id"] = timestamp_to_surrogate_key(df_dt["ts"])
+    df_dt["full_datetime"] = df_dt["ts"].dt.floor("h")
     df_dt["year"] = df_dt["ts"].dt.year
-    df_dt["quarter"] = df_dt["ts"].dt.quarter
     df_dt["month"] = df_dt["ts"].dt.month
     df_dt["day"] = df_dt["ts"].dt.day
     df_dt["hour"] = df_dt["ts"].dt.hour
-    df_dt["minute"] = df_dt["ts"].dt.minute
-    df_dt["second"] = df_dt["ts"].dt.second
-    df_dt["is_weekend"] = df_dt["ts"].dt.dayofweek >= 5
     df_dt["time_of_day"] = assign_time_of_day(df_dt["hour"])
 
-    return df_dt.drop(columns=["ts"])
+    return df_dt.drop(columns=["ts"]).drop_duplicates(subset=["datetime_id"])
 
 
 def transform_chunk(
@@ -239,51 +233,51 @@ def transform_chunk(
     valid_payments = dimension_lookups.get("payments", VALID_PAYMENTS) if dimension_lookups else VALID_PAYMENTS
     valid_locations = dimension_lookups.get("locations", set(range(1, 266))) if dimension_lookups else set(range(1, 266))
 
-    # VendorID: Map invalid/missing to -1
+    # VendorID: Map invalid/missing to 0 (Unknown/Other)
     df["vendor_id"] = (
         pd.to_numeric(df["VendorID"], errors="coerce")
-        .fillna(-1)
+        .fillna(0)
         .astype("int32")
     )
-    df["vendor_id"] = df["vendor_id"].where(df["vendor_id"].isin(valid_vendors), -1)
+    df["vendor_id"] = df["vendor_id"].where(df["vendor_id"].isin(valid_vendors), 0)
 
-    # RatecodeID: Map invalid/missing to -1
+    # RatecodeID: Map invalid/missing to 0 (Unknown/Unspecified)
     df["ratecode_id"] = (
         pd.to_numeric(df["RatecodeID"], errors="coerce")
-        .fillna(-1)
+        .fillna(0)
         .astype("int32")
     )
-    df["ratecode_id"] = df["ratecode_id"].where(df["ratecode_id"].isin(valid_ratecodes), -1)
+    df["ratecode_id"] = df["ratecode_id"].where(df["ratecode_id"].isin(valid_ratecodes), 0)
 
-    # payment_type: Map invalid/missing to -1
+    # payment_type: Map invalid/missing to 0 (Unknown/Unspecified)
     df["payment_type_id"] = (
         pd.to_numeric(df["payment_type"], errors="coerce")
-        .fillna(-1)
+        .fillna(0)
         .astype("int32")
     )
     df["payment_type_id"] = df["payment_type_id"].where(
-        df["payment_type_id"].isin(valid_payments), -1
+        df["payment_type_id"].isin(valid_payments), 0
     )
 
-    # PULocationID and DOLocationID: Dynamic lookup against valid locations (fallback: -1)
+    # PULocationID and DOLocationID: Dynamic lookup against valid locations (fallback: 0)
     df["pickup_location_id"] = (
         pd.to_numeric(df["PULocationID"], errors="coerce")
-        .fillna(-1)
+        .fillna(0)
         .astype("int32")
     )
     df["pickup_location_id"] = df["pickup_location_id"].where(
         df["pickup_location_id"].isin(valid_locations),
-        -1,
+        0,
     )
 
     df["dropoff_location_id"] = (
         pd.to_numeric(df["DOLocationID"], errors="coerce")
-        .fillna(-1)
+        .fillna(0)
         .astype("int32")
     )
     df["dropoff_location_id"] = df["dropoff_location_id"].where(
         df["dropoff_location_id"].isin(valid_locations),
-        -1,
+        0,
     )
 
     # Handle case-sensitivity alias for Airport_fee
@@ -292,23 +286,26 @@ def transform_chunk(
     elif "airport_fee" not in df.columns:
         df["airport_fee"] = 0.0
 
+    if "cbd_congestion_fee" not in df.columns:
+        df["cbd_congestion_fee"] = 0.0
+
     # Component fee aggregation and reconciliation
     # Total revenue must reflect fare plus all regulatory surcharges and tips
     calculated_total = (
         df["fare_amount"]
-        + df["extra"]
-        + df["mta_tax"]
+        + df.get("extra", 0.0)
+        + df.get("mta_tax", 0.0)
         + df["tip_amount"]
         + df["tolls_amount"]
-        + df["improvement_surcharge"]
-        + df["congestion_surcharge"]
+        + df.get("improvement_surcharge", 0.0)
+        + df.get("congestion_surcharge", 0.0)
         + df["airport_fee"]
         + df["cbd_congestion_fee"]
     )
     # If raw total_amount is zero or null but components exist, impute with calculated sum
     df["total_amount"] = df["total_amount"].where(df["total_amount"] > 0, calculated_total)
 
-    # 7. Surrogate Key Mapping for Datetimes
+    # 7. Surrogate Key Mapping for Datetimes (Hourly YYYYMMDDHH)
     df["pickup_datetime_id"] = timestamp_to_surrogate_key(df["tpep_pickup_datetime"])
     df["dropoff_datetime_id"] = timestamp_to_surrogate_key(df["tpep_dropoff_datetime"])
 
@@ -322,22 +319,17 @@ def transform_chunk(
         "dropoff_datetime_id",
         "pickup_location_id",
         "dropoff_location_id",
-        "payment_type_id",
         "vendor_id",
         "ratecode_id",
+        "payment_type_id",
         "passenger_count",
         "trip_distance",
-        "store_and_fwd_flag",
         "fare_amount",
-        "extra",
-        "mta_tax",
         "tip_amount",
         "tolls_amount",
-        "improvement_surcharge",
-        "congestion_surcharge",
-        "cbd_congestion_fee",
-        "airport_fee",
         "total_amount",
+        "airport_fee",
+        "cbd_congestion_fee",
     ]
 
     fact_df = df[fact_cols].copy()

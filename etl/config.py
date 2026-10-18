@@ -24,7 +24,29 @@ WAREHOUSE_DB = os.getenv("WAREHOUSE_DB", "nyc_taxi_warehouse")
 SOURCE_TABLE = os.getenv("SOURCE_TABLE", "yellow_taxi_trips")
 
 # File Paths
-RAW_CSV_PATH = Path(os.getenv("RAW_CSV_PATH", BASE_DIR / "yellow_taxi_2025.csv"))
+def _resolve_raw_csv_path() -> Path:
+    env_path = os.getenv("RAW_CSV_PATH") or os.getenv("RAW_DATA_PATH")
+    if env_path:
+        p = Path(env_path)
+        if not p.is_absolute():
+            p = BASE_DIR / p
+        if p.exists():
+            return p
+    # Standard named file
+    default_p = BASE_DIR / "yellow_taxi_2025.csv"
+    if default_p.exists():
+        return default_p
+    # Downloaded NYC Open Data named file
+    large_csv = BASE_DIR / "2025_Yellow_Taxi_Trip_Data_20261018.csv"
+    if large_csv.exists():
+        return large_csv
+    # Any 2025 CSV in root
+    for candidate in sorted(BASE_DIR.glob("*2025*.csv")):
+        return candidate
+    return default_p
+
+RAW_CSV_PATH = _resolve_raw_csv_path()
+RAW_DATA_PATH = RAW_CSV_PATH
 LOOKUP_CSV_PATH = Path(os.getenv("LOOKUP_CSV_PATH", BASE_DIR / "taxi_zone_lookup.csv"))
 
 # Performance & Streaming Settings
