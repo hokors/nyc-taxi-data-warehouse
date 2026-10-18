@@ -1,74 +1,39 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getQuery1, getQuery4 } from "@/src/lib/api";
+import { getOverview } from "@/src/lib/api";
 import { Card, Badge } from "@/src/app/components/ui/Controls";
 
 const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export default function Overview() {
   const [loading, setLoading] = useState(true);
-  const [kpis, setKpis] = useState({
-    totalTrips: 0,
-    totalGross: 0,
-    avgFare: 0,
-    totalTip: 0,
-  });
-  const [monthlyTrend, setMonthlyTrend] = useState<{ month: number; trips: number }[]>([]);
-  const [topZones, setTopZones] = useState<Array<{ borough: string; zone: string; trips: number }>>([]);
+  const [data, setData] = useState<{
+    total_trips: number;
+    total_gross: number;
+    avg_fare: number;
+    total_tips: number;
+    top_zones: Array<{ borough: string; zone: string; trips: number }>;
+    monthly_trend: Array<{ month: number; trips: number }>;
+  } | null>(null);
 
   useEffect(() => {
-    async function loadWarehouseData() {
+    async function loadData() {
       try {
         setLoading(true);
-        const [q1, q4] = await Promise.all([getQuery1(true), getQuery4(true, 5)]);
-
-        // 1. Calculate warehouse-wide KPIs from Q1 aggregation
-        let trips = 0;
-        let revenue = 0;
-        let fareSum = 0;
-
-        const monthMap: Record<number, number> = {};
-        for (const row of q1.data) {
-          trips += row.total_trips;
-          revenue += row.total_revenue;
-          fareSum += row.avg_fare * row.total_trips;
-          monthMap[row.month] = (monthMap[row.month] || 0) + row.total_trips;
-        }
-
-        setKpis({
-          totalTrips: trips,
-          totalGross: revenue,
-          avgFare: trips > 0 ? fareSum / trips : 0,
-          totalTip: revenue * 0.14, // Tip proportion approximation from fact table
-        });
-
-        // 2. Trend data
-        const trendList = Object.entries(monthMap).map(([m, t]) => ({
-          month: Number(m),
-          trips: t,
-        })).sort((a, b) => a.month - b.month);
-        setMonthlyTrend(trendList);
-
-        // 3. Top zones from Q4 (latest month snapshot)
-        const latestMonth = Math.max(...q4.data.map((d) => d.month), 1);
-        const topCurrent = q4.data
-          .filter((d) => d.month === latestMonth)
-          .map((d) => ({
-            borough: d.borough,
-            zone: d.pickup_zone,
-            trips: d.trip_count,
-          }));
-        setTopZones(topCurrent);
+        const res = await getOverview();
+        setData(res);
       } catch (err) {
         console.error("Failed to load warehouse data:", err);
       } finally {
         setLoading(false);
       }
     }
-    loadWarehouseData();
+    loadData();
   }, []);
 
+  const monthlyTrend = data?.monthly_trend || [];
+  const topZones = data?.top_zones || [];
   const maxTrips = Math.max(...monthlyTrend.map((t) => t.trips), 1);
   const trendPoints = monthlyTrend
     .map((v, i) => `${(i / Math.max(monthlyTrend.length - 1, 1)) * 600},${200 - (v.trips / maxTrips) * 160}`)
@@ -90,24 +55,24 @@ export default function Overview() {
       <div className="kpi-grid">
         <Card className="kpi featured">
           <div className="kpi-top">Total Trips <span className="icon-chip">↗</span></div>
-          <strong>{loading ? "..." : `${(kpis.totalTrips / 1_000_000).toFixed(2)}M`}</strong>
+          <strong>{loading ? "..." : `${((data?.total_trips || 0) / 1_000_000).toFixed(2)}M`}</strong>
           <div className="kpi-foot">COUNT(*) · Live fact table</div>
         </Card>
         <Card className="kpi">
           <div className="kpi-top">Total Gross Charges <span className="icon-chip">$</span></div>
-          <strong>{loading ? "..." : `$${(kpis.totalGross / 1_000_000).toFixed(1)}M`}</strong>
+          <strong>{loading ? "..." : `$${((data?.total_gross || 0) / 1_000_000).toFixed(1)}M`}</strong>
           <p className="kpi-subtext">SUM(total_amount)</p>
           <div className="kpi-foot">Verified warehouse revenue</div>
         </Card>
         <Card className="kpi">
           <div className="kpi-top">Average Fare per Trip <span className="icon-chip">∅</span></div>
-          <strong>{loading ? "..." : `$${kpis.avgFare.toFixed(2)}`}</strong>
+          <strong>{loading ? "..." : `$${(data?.avg_fare || 0).toFixed(2)}`}</strong>
           <p className="kpi-subtext">AVG(fare_amount)</p>
           <div className="kpi-foot">Base fare average</div>
         </Card>
         <Card className="kpi">
           <div className="kpi-top">Total Estimated Tips <span className="icon-chip">＋</span></div>
-          <strong>{loading ? "..." : `$${(kpis.totalTip / 1_000_000).toFixed(1)}M`}</strong>
+          <strong>{loading ? "..." : `$${((data?.total_tips || 0) / 1_000_000).toFixed(1)}M`}</strong>
           <p className="kpi-subtext">SUM(tip_amount)</p>
           <div className="kpi-foot">Credit card transactions</div>
         </Card>
@@ -118,12 +83,12 @@ export default function Overview() {
           <div className="card-header">
             <div>
               <h2>Monthly Ride Volume Trend</h2>
-              <p>Aggregated via Query 1 covering index</p>
+              <p>Temporal distribution across 12 months</p>
             </div>
             <Badge tone="neutral">Monthly</Badge>
           </div>
           <div className="chart-stat">
-            <strong>{loading ? "..." : `${kpis.totalTrips.toLocaleString()} Total Trips`}</strong>
+            <strong>{loading ? "..." : `${(data?.total_trips || 0).toLocaleString()} Total Trips`}</strong>
           </div>
           <div className="chart-wrap">
             <svg viewBox="0 0 600 220" role="img">
@@ -155,7 +120,7 @@ export default function Overview() {
           <div className="card-header">
             <div>
               <h2>Top Pickup Zones</h2>
-              <p>Ranked via Query 4 Window Function</p>
+              <p>Ranked by trip count across warehouse</p>
             </div>
             <Badge>Pickup</Badge>
           </div>

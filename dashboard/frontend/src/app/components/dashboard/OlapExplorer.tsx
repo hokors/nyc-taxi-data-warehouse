@@ -23,11 +23,11 @@ export default function OlapExplorer() {
       try {
         setLoading(true);
         let res: any;
-        if (activeTab === 1) res = await getQuery1(true);
-        else if (activeTab === 2) res = await getQuery2(true, 20);
-        else if (activeTab === 3) res = await getQuery3(true);
-        else if (activeTab === 4) res = await getQuery4(true, 10);
-        else if (activeTab === 5) res = await getQuery5(true);
+        if (activeTab === 1) res = await getQuery1(false);
+        else if (activeTab === 2) res = await getQuery2(false, 20);
+        else if (activeTab === 3) res = await getQuery3(false);
+        else if (activeTab === 4) res = await getQuery4(false, 10);
+        else if (activeTab === 5) res = await getQuery5(false);
 
         setData(res?.data || []);
         setExecutionTime(res?.execution_time_ms || null);
