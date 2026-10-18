@@ -24,7 +24,7 @@ CREATE TABLE dim_location (
 );
 
 CREATE TABLE dim_datetime (
-    datetime_id INT PRIMARY KEY,
+    datetime_id INT AUTO_INCREMENT PRIMARY KEY,
     year INT,
     quarter INT,
     month INT,
@@ -37,7 +37,7 @@ CREATE TABLE dim_datetime (
 );
 
 CREATE TABLE fact_taxi_rides (
-    ride_id INT PRIMARY KEY,
+    ride_id INT AUTO_INCREMENT PRIMARY KEY,
     pickup_datetime_id INT,
     dropoff_datetime_id INT,
     pickup_location_id INT,
